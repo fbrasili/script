@@ -1,0 +1,129 @@
+#!/usr/bin/python3
+
+import sys
+import os
+from glob import glob
+import matplotlib
+matplotlib.use('Agg')
+from pylab import *
+from scipy import integrate
+sys.path.append('/home/fbrasili/.python')
+from chains import *
+from plots import myPlot
+
+print()
+print( "=====================================================================================================================================" )
+print( " plot the thermodynamics quantities Vs total number of nanoparticles in the simulation box " )
+print( " save the computed quantities and the plots in the directory plots_thermo " )
+print( "=====================================================================================================================================" )
+print( "  Usage: " )
+print( "    plot_thermoVsN -options" )
+print( "  Options: " )
+print( "    -dir <name>		name of the directory where performing the analysis (default ./) " )
+print( "    -Nmin <value>	minimum number of points to plot: if N<Nmin does not plot the adsorption curve (default 3) " )
+#print( "    -alpha <value>	AGGIUNGERE LA POSSIBILITÀ DI SCEGLIERE UN VALORE DI ALPHA DIVERSO DA 0
+print( "=====================================================================================================================================" )
+print()
+
+alpha = "0.00" # PER ORA ALPHA E' FISSATO, MODIFICARE LO SCRIPT PER POTERLO SCEGLIERE
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+
+################################################
+### name of the directory where to save data ###
+fol_plots = os.path.join( fol0 , 'plots_thermo' )
+if not os.path.isdir( fol_plots ): os.system( 'mkdir ' + fol_plots )
+
+#############################################################################
+### name of the directories with data from simulations, N, D and Q values ###
+fols = array( glob( os.path.join( fol0 , "np*" ) ) )
+Ns,Qs,Ds = [],[],[]
+for fol in fols:
+    idx0 = fol.index('/') ; idx0 = idx0 + fol[idx0:].index('_')
+    idx1 = idx0 + fol[idx0:].index('n') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Ns += [ int(   fol[idx1:idx2] ) ]
+    idx1 = idx2 + fol[idx2:].index('q') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Qs += [ int(   fol[idx1:idx2] ) ]
+    idx1 = idx2 + fol[idx2:].index('D') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Ds += [ float( fol[idx1:idx2] ) ]
+fols, Ns, Qs, Ds = fols[argsort(Ns)], array(Ns)[argsort(Ns)], array(Qs)[argsort(Ns)], array(Ds)[argsort(Ns)]
+
+########################
+### read thermo data ###
+paths = array([ os.path.join( f , 'alpha_'+alpha , 'press' , 'thermo.dat' ) for f in fols ])
+cond  = array([ os.path.isfile(path) for path in paths ])
+paths, Ns, Qs, Ds = paths[cond], Ns[cond], Qs[cond], Ds[cond]
+data = array([ loadtxt( path , skiprows=1 ) for path in paths ] ).transpose()
+#Etot,Ekin,Epot,Pall,Pneut,Pncions,Pmgions,Pnps,Ppcions,Pmgel
+Etot,Ekin,Epot,Pall,Pneut,Pncions,Pmgions,Pmgel = loadtxt( os.path.join( fol0 , 'mgel_charged_only' , 'alpha_'+alpha , 'press' , 'thermo.dat' ) , skiprows=1 )
+data0 = array([Etot,Ekin,Epot,Pall,Pneut,Pncions,Pmgions,0.,0.,Pmgel])
+
+#############
+### PLOTS ###
+print( "plotting curves ..." )
+
+#############################################################
+### mimimum number of points to plot the shrinking curve ###
+if "-Nmin" in sys.argv:
+    idx = sys.argv.index('-Nmin') + 1
+    nMin = int( sys.argv[idx] )
+else:
+    nMin = 3
+
+########################################################################
+### select (according to nMin), save and plot shrinking Vs Ns curves ###
+thermonames = ["Etot","Ekin","Epot","Pall","Pneut","Pncions","Pmgions","Pnps","Ppcions","Pmgel"]
+fnames_base = [ name+"VsNtot" for name in thermonames ]
+
+couples = array([ [q,d] for q in set(Qs) for d in set(Ds) ])
+for Q,D in couples:
+    cond = (Qs==Q) * (Ds==D)
+    if cond.sum() < nMin: continue
+    paths  = [ os.path.join( fol_plots , name + "_q%i"%Q + "_D%.1f"%D + "_alpha_" + alpha ) for name in fnames_base ] 
+
+    for path,y,y0,name in zip(paths,data,data0,thermonames):
+        x , y = append( 0 , Ns[cond] ) , append( y0 , y[cond] )
+        temp = os.path.join( os.path.dirname(path) , ".temp_data" )
+        with open(path+".dat", "w") as of:
+            of.write( "# Ntot "+name+" \n" )
+            #of.write( "0.000e+00 %.3e \n"%y0 )
+        savetxt( temp , c_[x,y] , fmt='%.3e' )
+        os.system( "cat "+temp+" >> " + path+".dat" )
+        os.system(  "rm "+temp  )
+
+        figure()
+        errorbar(x, y, fmt='o')
+        xlabel( "number of nanoparticles", fontsize=16 )
+        ylabel( name                     , fontsize=16 )
+        savefig( path+".pdf" ) ; close()
+'''
+##############################################
+### comparison of curves with fixed D or q ###
+pars       = array([ Qs  , Ds  ])
+pars_names = array([ "q" , "D" ])
+for j in [1,-1]:
+    pars1,pars2 = pars[::j]
+    pname,label = pars_names[::j]
+    for p1 in sort( list(set(pars1)) ):
+        paths = [ os.path.join( fol_plots , f + "_" + pname + "%i"%p1 + "_alpha_" + alpha + ".pdf" ) for f in fnames_base ]
+        for path,y,y0,name in zip(paths,data,data0,thermonames):
+            nplots = 0
+            for p2 in sort( list(set(pars2)) ):
+                cond = (pars1==p1) * (pars2==p2)
+                if cond.sum() >= nMin:
+                    nplots += 1
+                    x , y = append( 0 , Ns[cond] ) , append( y0 , y[cond] )
+                    errorbar(x, y, fmt='o', label=label+" = %i"%p2)
+            if nplots>1:
+                xlabel( "number of nanoparticles", fontsize=16 )
+                ylabel( name                     , fontsize=16 )
+                legend( fontsize=16 , title=pname+" = %i"%p1 , title_fontsize=16 )
+                savefig( path )
+            close()
+'''
+print( "all data and plots were saved in the directory " + fol_plots )
+print() ; print( "Done." ) ; print()

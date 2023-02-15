@@ -1,0 +1,74 @@
+#!/usr/bin/python3
+
+import sys
+#import os
+#from glob import glob
+sys.path.append('/home/fbrasili/.python')
+from configurations import *
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " extract one or more consecutive conficurations and write them in the output file " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "  extract_configurations -n <val> -options " )
+print( "  Options: " )
+print( "    -dir <name>     name of the directory where performing the analysis (default ./) " )
+print( "    -f <name>       name of the file with configurations (default \"configurations.dat\") ")
+print( "    -out <name>     name of the output file (default \"selected_configurations.dat\") " )
+print( "    -n <val>        number of consecutive configurations to extract " )
+print( "    -first <val>    number of the first configuration to extract (dafault 0) ")
+print()
+print( "======================================================================================================================================" )
+print()
+
+assert "-n" in sys.argv , "choose the number of consecutive configurations to be extracted"
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+
+if "-f" in sys.argv:
+    idx = sys.argv.index( "-f" ) + 1
+    confs_fname = sys.argv[idx]
+else:
+    confs_fname = "configurations.dat"
+path_in = os.path.join( fol0 , confs_fname )
+assert os.path.isfile( path_in ) , "the file " + path_in + " does not exist"
+
+
+###############################
+### name of the output file ###
+if "-out" in sys.argv:
+    idx = sys.argv.index( "-out" ) + 1
+    out_fname = sys.argv[idx]
+else:
+    out_fname = "selected_configurations.dat"
+path_out = os.path.join( fol0 , out_fname )
+if os.path.isfile( path_out ): os.system( "rm " + path_out )
+
+###########################
+### selected configurations
+idx = sys.argv.index( "-n" ) + 1
+n = int( sys.argv[idx] )
+
+if "-first" in sys.argv:
+    idx = sys.argv.index( "-first" ) + 1
+    first = int( sys.argv[idx] )
+else:
+    first = 0
+
+##############
+### SCRIPT ###
+extractConfigurations(path_in, n, first=0, out_fname=path_out )
+
+print() ; print( "Done." ) ; print()
+

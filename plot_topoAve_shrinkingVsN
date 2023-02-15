@@ -1,0 +1,206 @@
+#!/usr/bin/python3
+
+import sys
+import os
+from glob import glob
+import matplotlib
+matplotlib.use('Agg')
+from pylab import *
+sys.path.append('/home/fbrasili/.python')
+from utils import compute_mean
+
+print()
+print( "=====================================================================================================================================" )
+print( " plot the quantities of chains analysis averaged over the different topologies " )
+print( " save the computed quantities and the plots in the directory plots_average " )
+print( "=====================================================================================================================================" )
+print( "  Usage: " )
+print( "    plot_topoAve_thermoVsN -options" )
+print( "  Options: " )
+print( "    -dir <name>	           name of the directory where performing the analysis (default ./) " )
+print( "    -monomers <val>        compute the average only for microgel with the selected number of monomers " )
+print( "    -c <val>               compute the average only for microgel with the selected percentage of crosslinkers " )
+print( "    -charge <type> <val>   compute the average only for microgel with the selected charge distribution (surface or random) and fraction of charged monomers " )
+print( "    -Nmin <val>	           minimum number of points to plot: if N<Nmin does not plot the adsorption curve (default 3) " )
+print( "    -n <val>               compute the average only for directories with n nanoparticles " )
+print( "    -Q <val>               compute the average only for nanoparticles with charge Q " )
+print( "    -D <val>               compute the average only for nanoparticles with diameter D " )
+print( "    -w                     the mean chain shrinking is computed using the chains lenghts as weights " )
+print( "    -step <var> <val>      var is \"L\" (chain length), \"q\" (charge), \"r\" (radial position) or \"d\" (distance from closest NP) " )
+print( "                            the value is step used for determining the bins in which the mean chain shrinking is computed "  )
+print( "                            (default -step L 10 ; -step r 2 ; -step d 1 ; -step q 1)  " )
+print( "    -mode <str>            choose the mode for computing the mean vales of the plotted quantities (default \"bins\") " )
+print( "                            upto: for each the mean is computed within all the bins  " )
+print( "                            from: the mean is computed within all the bins " )
+print( "                            bins: the mean is computed within each bin " )
+#print( "    -alpha <val>           AGGIUNGERE LA POSSIBILITÀ DI SCEGLIERE UN VALORE DI ALPHA DIVERSO DA 0 " )
+print( "=====================================================================================================================================" )
+print()
+
+alpha = "0.00" # PER ORA ALPHA E' FISSATO, MODIFICARE LO SCRIPT PER POTERLO SCEGLIERE
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+
+
+############################################################################################
+### name of the directories with data from simulations, N, c , charge distribution and f ###
+fols_mg = array( glob( os.path.join( fol0 , "mgel*" ) ) )
+Ns,cs,ds,fs = [],[],[],[]
+for fol in fols_mg:
+    idx0 = fol.index('/') 
+    idx1 = idx0 + fol[idx0:].index('N') + 1 ; idx2 = idx1 + fol[idx1:].index('k') ; Ns += [ fol[idx1:idx2] ]
+    idx1 = idx2 + fol[idx2:].index('c') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; cs += [ fol[idx1:idx2] ]
+    idx1 = idx2 +                       + 1 ; idx2 = idx1 + fol[idx1:].index('0') ; ds += [ fol[idx1:idx2] ]
+    idx1 = idx2                             ; idx2 = idx1 + fol[idx1:].index('_') ; fs += [ fol[idx1:idx2] ]
+Ns, cs, ds, fs = array(Ns), array(cs), array(ds), array(fs)
+
+if any([ opt in sys.argv for opt in ["-monomers","-c","-charge"] ]):
+    cond = ones_like(fols_mg).astype(bool)
+    if "-N" in sys.argv:
+        idx = sys.argv.index( "-monomers" ) + 1 ; N = sys.argv[idx]
+        if 'k' in N: N = N.replace('k','',1)
+        if int(N) >= 1000: N = str( int(N)//1000 )
+        cond *= Ns==N
+    if "-c" in sys.argv:
+        idx = sys.argv.index( "-c" ) + 1 ; c = sys.argv[idx]
+        cond *= cs==c
+    if "-charge" in sys.argv:
+        idx = sys.argv.index( "-charge" ) + 1 ; cd = sys.argv[idx]
+        if cd.replace('.','',1).isdigit():
+            cond *= fs==cd
+        elif cd in ["surface","surf","random" ,"rnd"]:
+            if cd == "surf": cd = "surface"
+            if cd == "rnd" : cd = "random"
+            cond *= ds==cd
+            idx +=1 ; f = sys.argv[idx]
+            if f.replace('.','',1).isdigit(): cond *= fs==f
+    fols_mg,Ns,cs,ds,fs = fols_mg[cond],Ns[cond],cs[cond],ds[cond],fs[cond]
+
+assert len(fols_mg)>1 , "none of the existing directories matches with the selected microgel parameters"
+
+################################################
+### name of the directory where to save data ###
+fol_out0 = os.path.join( fol0 , 'plots_average' )
+if not os.path.isdir( fol_out0 ): os.system( 'mkdir ' + fol_out0 )
+
+
+##########################################################################
+### compute the average over the different topologies of each microgel ###
+if "-mode" in sys.argv:
+    idx = sys.argv.index( "-mode" ) + 1
+    mode = sys.argv[idx]
+else:
+    mode = "bins"
+print( "the average data for plots are computed using the mode " + mode ) ; print()
+
+dl,dq,dr,dd = 10,1,2,1
+if "-step" in sys.argv:
+    idxs = argwhere( array(sys.argv)=="-step" ).flatten() + 1
+    for idx in idxs:
+        if   sys.argv[idx] in ["L","l","N","n"]: dl = sys.argv[idx+1]
+        elif sys.argv[idx] in ["Q","q"]        : dq = sys.argv[idx+1]
+        elif sys.argv[idx] in ["R","r"]        : dr = float( sys.argv[idx+1] )
+        elif sys.argv[idx] in ["D","d"]        : dd = float( sys.argv[idx+1] )
+    if dl == "log": dl = "custom"
+    else          : dl = int(dl)
+    if dq == "log": dq = "custom"
+    else          : dq = int(dq)
+
+couples_nc = [ [n,c] for n in set(Ns) for c in set(cs) ]
+couples_df = [ [d,f] for d in set(ds) for f in set(fs) ]
+microgels = array([ c1+c2 for c1 in couples_nc for c2 in couples_df ])
+
+for microgel in microgels:
+    Nmg,c,cd,f = microgel
+    cond = (Ns==Nmg) * (cs==c) * (ds==cd) * (fs==f)
+    if cond.sum()==0: continue
+    fols0 = fols_mg[cond]
+    print( "microgel with "+Nmg+"k monomers, "+c+"% crosslinker, "+cd+" charge distribution and fraction of charged monomers f = "+f )
+    if len(fols0)<2:
+        print( "  average over topologies not computed" )
+        print()
+        continue
+    fols_np = [ os.path.basename(fol) for fol in glob( os.path.join( fols0[0] , "np*" ) ) ]
+    fols_np = [ fol for fol in fols_np if all([ os.path.isdir( os.path.join( fol0 , fol ) ) for fol0 in fols0 ]) ]
+    if any([ opt in sys.argv for opt in ["-n","-Q","-D"] ]):
+        cond = ones_like(fols_np).astype(bool)
+        ns,Qs,Ds = [],[],[]
+        for fol in fols_np:
+            idx0 = fol.index('_')
+            idx1 = idx0 + fol[idx0:].index('n') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; ns += [   int( fol[idx1:idx2] ) ]
+            idx1 = idx2 + fol[idx2:].index('q') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Qs += [   int( fol[idx1:idx2] ) ]
+            idx1 = idx2 + fol[idx2:].index('D') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Ds += [ float( fol[idx1:idx2] ) ]
+        ns,Qs,Ds = array(ns),array(Qs),array(Ds)
+        if "-n" in sys.argv:
+            idx = sys.argv.index( "-n" ) + 1 ; n = int( sys.argv[idx] )
+            cond *= ns==n
+        if "-Q" in sys.argv:
+            idx = sys.argv.index( "-Q" ) + 1 ; q = int( sys.argv[idx] )
+            cond *= Qs==q
+        if "-D" in sys.argv:
+            idx = sys.argv.index( "-D" ) + 1 ; D = float( sys.argv[idx] )
+            cond *= Ds==D
+        fols_np = array(fols_np)[cond]
+    
+    fol_out = os.path.join( fol_out0 , os.path.basename(fols0[0])[:-6] )
+    if not os.path.isdir( fol_out ): os.system( 'mkdir ' + fol_out )
+
+    for fol in fols_np:
+        fol_out_np = os.path.join( fol_out , fol )
+        if not os.path.isdir( fol_out_np ): os.system( 'mkdir ' + fol_out_np )
+
+        print( "  data for " + fol  )
+        data = []
+        for fol0 in fols0:
+            path_data = os.path.join( fol0 , fol , "alpha_"+alpha , "chains_properties.dat" )
+            if not os.path.isfile(path_data):
+                print( "    the file " + path_data + " is missing" )
+                continue
+            print( "    loading file " + path_data + " ..." )
+            data += [ loadtxt( path_data , usecols=(0,1,2,3,5,6,7,8) , skiprows=1 ) ]
+        L,q,r,Rg,d,dc,r0,Rg0 = concatenate(data).transpose() ; del data
+        print()
+        
+        eds = array([0,1,2,4,8,16,32,64])   
+        xnames =    [ "L"   , "q" , "r"  , "Dnp" , "r0" ]
+        Xs  = array([  L    ,  q  ,  r   ,  d    ,  r0  ]) ; del d
+        dXs =       [  dl   ,  dq ,  dr  ,  dd   ,  dr  ]
+        edges =     [ eds*5 , eds , None , None  , None ]
+        ynames = array([ "shrinking"      , "radial displacement" , "Dr"                      , "DRg"                     ])
+        conds  = array([ L>1              , r0>0                  , ones_like(L).astype(bool) , ones_like(L).astype(bool) ])
+        Ys     =       [ Rg[L>1]/Rg0[L>1] , r[r0>0]/r0[r0>0]      , r-r0                      , Rg-Rg0                    ]
+        del Rg,Rg0,r,r0
+        condsQ = [ ones_like(dc).astype(bool) , isnan(dc) , ~isnan(dc) ]
+        fnames = [ "all"                      , "neutral" , "charged"  ]
+
+        for condQ,fname in zip(condsQ,fnames):
+            print("    plotting data for " + fname + " chains ...")
+            if fname == "charged":
+                Xs  = append( Xs  , [dc]   , axis=0 ) ; del dc
+                dXs += [dd] ; edges += [None] ; xnames += ["Dc"]
+            for Y,cond,yname in zip( Ys, conds , ynames ):
+                for X,dX,edge,xname in zip( Xs[:,condQ*cond] , dXs , edges , xnames ):
+                    if xname == "q" and yname == "chain charge": continue
+                    if ( yname == "chain charge" or xname == "q" ) and fname in ["neutral", "charged"] : continue
+                    if "-w" in sys.argv: W = L[condQ*cond]
+                    else: W = None
+                    xs,ys,dys = compute_mean(X, Y[condQ[cond]], W, dX=dX, edges=edge, mode=mode)
+                    yname_path = "".join([ str( where(j==0,word,word.capitalize()) ) for j,word in enumerate(yname.split()) ])
+                    path = os.path.join( fol_out_np , yname_path + "Vs" + xname + "_" + fname )
+                    savetxt( path+".dat" , c_[xs,ys,dys] )
+                    figure()
+                    errorbar( xs, ys, yerr=dys , fmt="o" )
+                    savefig( path+".pdf" ) ; close()
+        print( "    plots saved in the directory " + fol_out_np + " ..." )
+        print()
+
+
+print( "all data and plots were saved in the directory " + fol_out0 )
+print() ; print( "Done." ) ; print()

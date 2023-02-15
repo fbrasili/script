@@ -1,0 +1,74 @@
+#!/usr/bin/python3
+
+import sys
+#import os
+#from glob import glob
+sys.path.append('/home/fbrasili/.python')
+from configurations import *
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " merge files with configurations in nested /restart/ directories  " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "  merge_configuratios_nested -options " )
+print( "  Options: " )
+print( "    -dir <name>             name of the directory where performing the analysis (default ./) " )
+print( "    -out <name>             name of the output file (default overwrite the file \"configurations.dat\" in the selected directory ) " )
+#print( "    -files <name1> <name2>  name of the configurations files to merge (default configurations.dat) " )
+print()
+print( "======================================================================================================================================" )
+print()
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol = sys.argv[idx]
+else:
+    fol = "./"
+assert os.path.isdir( fol ), "the directory " + fol + " does not exist"
+
+###############################
+### name of the output file ###
+if "-out" in sys.argv:
+    idx = sys.argv.index( "-out" ) + 1
+    out_fname = sys.argv[idx]
+else:
+    out_fname = os.path.join( fol , "configurations.dat" )
+
+
+##############
+### SCRIPT ###
+
+print( "merging the configuration files of the restart directories nested in " + fol + " ..." )
+
+fols = []
+while os.path.isdir( fol ):
+    fols += [fol]
+    fol = os.path.join( fol , "restart" )
+assert len(fols) > 1 , "no restart to merge"
+
+confs0 = os.path.join( fols[0] , "configurations.dat" )
+_,first0,interval0,_,last0,_ = readConfigurations( confs0 , check=False , retVals=True , verb=False )
+
+os.system( "cp " + confs0 + " .temp_merge" )
+print(os.path.isfile(".temp_merge"))
+for fol in fols[1:]:
+    path = os.path.join( fol , "configurations.dat" )
+    assert os.path.isfile( path ) , "missing file " + path + ", cannot proceed with merging"
+    print( "adding configurations from " + path + " ..." )
+    _,first,interval,_,last,_ = readConfigurations( path , check=False , retVals=True , verb=False )
+    assert first <= last0+interval0 , "missing configurations between files " + confs_path + " and " + path
+    mergeConfigurations( ".temp_merge" , path , replace=True )
+    first0,interval0,last0 = first,interval,last
+
+assert readConfigurations( ".temp_merge" , check=True , retVals=False , verb=False )
+os.system( "mv .temp_merge " + out_fname )
+os.system( "rm .temp_merge " )
+
+print() ; print( "Done." ) ; print()
+

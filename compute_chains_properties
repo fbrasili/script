@@ -1,0 +1,121 @@
+#!/usr/bin/python3
+
+import sys
+import os
+import time
+sys.path.append('/home/fbrasili/.python')
+from chains import *
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " compute the properties of the chains listed in the file chains_all.dat " )
+print( " if the file with chains does not exist, create it using the init file " )
+print( " for each chain compute length (L), total charge (q), distance (d) of the center of mass from that of the microgel, gyration radius (Rg), end-to-end distance (Ree) " )
+print( " except for reference data (microgel without nanoparticles), compute also the distance of each chain from the closest nanoparticle: " )
+print( "    d  : minimum monomer-nanoparticle distance " )
+print( "    dc : minimum charge-nanoparticle ditance  " )
+print( " save the computed quantities in the output file " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "    compute_chains_properties -options " )
+print( "  Options: " )
+print( "    -dir <name>		name of the directory where performing the analysis (default ./) " )
+print( "    -conf <name>	name of the configurations file (default configurations.dat) " )
+print( "    -in <name>		name of the init file (default mgel_nanoparts_eq10e6.dat or, if using the option -ref, mgel_cions_eq10e6.dat) " )
+print( "    -ref                for reference data: save only the values of the chains properties averaged overall the configurations" )
+print( "    -out <name>		name of the output file (default chains_properties.dat; if using the option -ref default chains_properties_average.dat ) " )
+print()
+print( "======================================================================================================================================" )
+print()
+
+t0 = time.time()
+##################################
+### standard or reference data ###
+ref = "-ref" in sys.argv
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol = sys.argv[idx]
+else:
+    fol = "./"
+assert os.path.isdir( fol ), "the directory " + fol + " does not exist"
+
+############################################
+### name of the file with configurations ###
+if "-conf" in sys.argv:
+    idx = sys.argv.index( "-conf" ) + 1
+    confs_fname = sys.argv[idx]
+else:
+    confs_fname = "configurations.dat"
+confs_fname = os.path.join( fol , confs_fname )
+assert os.path.isfile( confs_fname ), "the file " + confs_fname + " doese not exist"
+
+####################################
+### name of the file with chains ###
+chains_fname = os.path.join( fol , "chains.dat" )
+
+#########################################################
+### if the file with chains does not exist, create it ###
+if not os.path.isfile( chains_fname ):
+    print( "missing chains files" )
+    
+    #############################
+    ### name of the init file ###
+    if "-in" in sys.argv:
+        idx = sys.argv.index( "-in" ) + 1
+        init_fname = sys.argv[idx]
+    elif ref:
+        init_fname = "mgel_cions_eq10e6.dat"
+    else:
+        init_fname = "mgel_nanoparts_eq10e6.dat"
+    init_fname = os.path.join( fol , init_fname )
+    assert os.path.isfile( init_fname ), "the init file " + init_fname + " doese not exist, it is needed to create the file with chains"
+    
+    N,chains = gen_chains(init_fname, rem_loops=True, rem_dangling=False, saveChains=True, ret=True)
+else:
+    with open( chains_fname , "r" ) as chf:
+        chains = array( [ [ int(atom) for atom in line.split() ] for line in chf ], dtype=list )
+
+##########################################################################
+### compute length, charge, radial postition, Rg and Ree of the chains ###
+datas = compute_ChainsProperties( chains, confs_fname, computeDistsFromNps=not ref )
+if ref: datas = array([ data.mean(0)   for data in datas ])
+else  : datas = array([ data.flatten() for data in datas ])
+
+###############################
+### name of the output file ###
+if "-out" in sys.argv:
+    idx = sys.argv.index( "-out" ) + 1
+    out_fname = sys.argv[idx]
+elif "-ref" in sys.argv:
+    out_fname = "chains_properties_average.dat"
+else:
+    out_fname = "chains_properties.dat"
+out_fname = os.path.join( fol , out_fname )
+
+###################################################
+### if the output file already exist, delete it ###
+if os.path.isfile( out_fname ): os.system( "rm " + out_fname )
+
+#######################################################
+### save the computed quantities to the output file ###
+if ref: headings = "# L, q, r (distance from mgel COM), Rg, Ree \n"
+else  : headings = "# L, q, r (distance from mgel COM), Rg, Ree,  d (shorter monomer-NP distance), dc (shorter charge-NP distance)\n"
+
+temp = os.path.join( fol , ".temp_data" )
+with open( out_fname , "w" ) as f: f.write(headings)
+savetxt( temp , datas.transpose() )
+os.system( "cat " + temp + " >> " + out_fname )
+os.system( "rm " + temp )
+
+print( "chain poroperties saved to file " + out_fname )
+print()
+
+tf = time.time()
+print( "total computation time: %i s"%(tf-t0) ) 
+print( "Done." ) ; print()

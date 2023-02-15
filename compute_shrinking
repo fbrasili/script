@@ -1,0 +1,171 @@
+#!/usr/bin/python3
+
+import sys
+import os
+from glob import glob
+import time
+sys.path.append('/home/fbrasili/.python')
+from chains import *
+
+print()
+print( "======================================================================================================================================" )
+print( " analysis of the chains properties listed in the file chains_properties.dat   " )
+print( " compute their shrinking and displacement with respect to their size and position in the bare microgel (without nanoparticles)  " )
+print( " the shrinking is computed using the gyration radius " )
+print( " the radial displacement is computed using the position of the center of mass of each chain " )
+print( " the computed quantities are used to calculate an equivalent average shrinking " )
+print( " the equivalent shrinking is compared to that of the overall microgel, computed using Rg and Rh " )
+print( " all the computed quantities are saved in the output file " )
+print( "======================================================================================================================================" )
+print( "  Usage: " )
+print( "    compute_chains_shrinking -options " )
+print( "  Options: " )
+print( "    -out <name>		name of the output file (default chains_shrinking.dat) " )
+print( "    -dir <name>		name of the directory where performing the analysis (default ./) " )
+print( "    -dir_ref <name>	name of the directory of the reference system " )
+print( "    -update <opt>        if \"no\", do not add/update the column with reference data in the file chains_properties.dat (default \"yes\") " )
+print( "    -thres <value>      threshold on the charge of chains (default 2) " )
+print( "                        if Q <  thres: the shrinking is computed based on chain displacement " )
+print( "                        if Q >= thres: the shrinking is computed based on chain shrinking    " )
+print( "======================================================================================================================================" )
+print()
+
+t0 = time.time()
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+
+####################################################
+### name of the directory of the reference system ###
+if "-dir_ref" in sys.argv:
+    idx = sys.argv.index( "-dir_ref" ) + 1
+    fol_ref = sys.argv[idx]
+else:
+    fol_ref = glob( os.path.join( fol0 , ".." , "mgel_*" ) )[0]
+assert os.path.isdir( fol_ref ), "the directory " + fol_ref + " does not exist \nspecify a correct path for the system without nanoparticles"
+print( "directory with data for the microgel without nanoparticles: " + fol_ref )
+
+################################
+### alpha directories and values
+fols_alpha = sort( glob( os.path.join( fol0 , "alpha*" ) ) )
+alphas = array([ float( os.path.basename(f)[-4:] ) for f in fols_alpha ])
+
+###################################################
+### paths of the files with the chains analysis ###
+paths = [ os.path.join( f , "chains_properties.dat" ) for f in fols_alpha ]
+paths_ref = [os.path.join( fol_ref , os.path.basename(f) , "chains_properties_average.dat" ) for f in fols_alpha ]
+#################################################################
+### paths of files with microgel data in each alpha directory ###
+mgelRg_paths = [ os.path.join( f , "gyration_radii.dat" ) for f in fols_alpha ]
+mgelRh_paths = [ os.path.join( f , "zeno_rh" , "hydrodynamic_radius_NP.dat" ) for f in fols_alpha ]
+mgelRg_paths_ref = [ os.path.join( os.path.dirname(p) , "gyration_radii.dat" ) for p in paths_ref ]
+mgelRh_paths_ref = [ os.path.join( os.path.dirname(p) , "zeno_rh" , "hydrodynamic_radius.dat" ) for p in paths_ref ]
+
+print( "checking that all the files needed exist and are in the correct format..." )
+assert len(paths) > 0 , "the file chains_properties.dat is missing in all the directories alpha* \nrun compute_chains_properties in at least one of the directories" 
+assert all([ os.path.isfile(p) for p in paths_ref ])       , "the file chains_properties_average.dat is missing in one of the reference directories: \n" + str([ os.path.dirname(p)  for p in paths_ref ] )
+assert all([ os.path.isfile(p) for p in mgelRg_paths ])    , "the file with listed gyration radii is missing in one of the directories \n" + fols_alpha + " \nrun convex_hull in " + fol
+assert all([ os.path.isfile(p) for p in mgelRh_paths ])    , "the file with listed hydrodynamic radii is missing in one of the directories \n" + fols_alpha + " \nrun zeno in " + fol
+assert all([ os.path.isfile(p) for p in mgelRg_paths_ref ]), "the file with listed gyration radii is missing in one of the directories \n" + str([ os.path.dirname(p)  for p in paths_ref ] ) + " \nrun convex_hull in " + fol_ref
+assert all([ os.path.isfile(p) for p in mgelRh_paths_ref ]), "the file with listed hydrodynamic radii is missing in one of the directories \n" + str([ os.path.dirname(p)  for p in paths_ref ] ) + " \nrun zeno in " + fol_ref
+print()
+
+update = True
+if "-update" in sys.argv:
+    idx = sys.argv.index( "-update" ) + 1
+    if sys.argv[idx] == "no":
+        update = False
+        print( "reference values of chains r and Rg are already listed in the files chains_properties.dat " )
+        print()
+    
+
+########################################################
+##### 1. UPDATE FILES NEEDED FOR RUNNING THE SCRIPT ####
+########################################################
+if update:
+    ###########################################################################################
+    ### check that the chains in the working directories are the same of the reference ones ###
+    chains_paths     = [ os.path.join( f                              , "chains.dat" ) for f in fols_alpha ]
+    chains_paths_ref = [ os.path.join( fol_ref , os.path.basename(f)  , "chains.dat" ) for f in fols_alpha ]
+    assert all([ compare_chains(p, pr, ret=True) for p,pr in zip(chains_paths,chains_paths_ref) ]), "the chains listed in " + fol0 + " and " + fol_ref + "are different"
+    print()
+    
+    ##############################################################################################
+    ### update paths with <Rgs0> and <r0> (averages over configurations) values from paths_ref ###
+    print( "updating files chains_properties.dat with reference values of chains r and Rg ..." )
+    for p,pr in zip(paths,paths_ref): add_columnRg0(p,pr,ret=False)
+    print()
+
+
+###################################################################
+##### 2. COMPUTE THE MICROGEL SHRINKING FROM CHAINS PROPERTIES ####
+###################################################################
+print( "computing reference values and microgel shrinking from the chains properties..." )
+Ls,r0s,Rg0s = array([ loadtxt(p, skiprows=1, usecols=(0,7,8), unpack=True) for p in paths ]).transpose(1,0,2)
+Rg0_chains = array([ average(Rgs0, weights=L) for L,Rgs0 in zip(Ls,Rg0s) ]) ; del Rg0s
+r0_chains  = array([ average(r0  , weights=L) for L,r0   in zip(Ls,r0s ) ]) ; del r0s
+shr, errShr, shr_c, shr_n, dis, errDis, dis_c, dis_n, shr_sq, dis_sq, sRg_sq = array([ compute_shrinkingFromChains(p) for p in paths ]).transpose()
+print()
+
+
+#####################################################################
+##### 3. COMPUTE THE MICROGEL SHRINKING FROM MICROGEL PROPERTIES ####
+#####################################################################
+print( "computing reference values and microgel shrinking from the microgel properties..." )
+
+##############################################################################################################
+### read Rg,Rh and Rg0,Rh0 of the microgel and the corresponding standard deviations for each path (alpha) ###
+data_Rg  = array([ loadtxt( p , usecols=(1) , unpack=True ) for p in mgelRg_paths     ])
+data_Rg0 = array([ loadtxt( p , usecols=(1) , unpack=True ) for p in mgelRg_paths_ref ])
+Rg , errRg  = data_Rg.mean(1) , data_Rg.std(1)  ; del data_Rg #/sqrt(shape(data_Rg )[1])
+Rg0, errRg0 = data_Rg0.mean(1), data_Rg0.std(1) ; del data_Rg0#/sqrt(shape(data_Rg0)[1])
+
+data_Rh  = array([ loadtxt( p , skiprows=2 , usecols=(1) , unpack=True ) for p in mgelRh_paths     ])
+data_Rh0 = array([ loadtxt( p , skiprows=2 , usecols=(1) , unpack=True ) for p in mgelRh_paths_ref ])
+Rh , errRh  = data_Rh.mean(1) , data_Rh.std(1)  ; del data_Rh#/sqrt(shape(data_Rh )[1])
+Rh0, errRh0 = data_Rh0.mean(1), data_Rh0.std(1) ; del data_Rh0#/sqrt(shape(data_Rh0)[1])
+
+############################################################################################################################
+### compute the microgel shrinking based on Rg (without nanoparticles) and Rh (with nanoparticles) for each path (alpha) ###
+shr_Rg = Rg/Rg0 ; errShrRg = shr_Rg * hypot( errRg/Rg , errRg0/Rg0 )
+shr_Rh = Rh/Rh0 ; errShrRh = shr_Rh * hypot( errRh/Rh , errRh0/Rh0 )
+print()
+
+
+########################
+##### 4. SAVE DATA #####
+########################
+print( "saving data..." )
+fol = os.path.join( fol0 , "swelling" )
+if not os.path.isdir(fol): os.system( "mkdir " + fol )
+fol = os.path.join( fol  , "shrinking" )
+if not os.path.isdir(fol): os.system( "mkdir " + fol )
+
+temp = os.path.join( fol , ".temp_data" )
+########################################################################
+### save referece data in the file swelling/shrinking/ref_values.dat ###
+path = os.path.join( fol , "ref_values.dat" )
+with open( path , "w" ) as f:
+    f.write( "# alpha , Rg_mg0 , std , Rh_mg0 , std , <r_chain0>_l (all chains) , <Rg_chain0>_l (all chains) \n" )
+savetxt( temp , c_[alphas, Rg0, errRg0, Rh0, errRh0, r0_chains, Rg0_chains] )
+os.system( "cat " + temp + " >> " + path )
+print( "reference values saved to file " + path )
+
+########################################################################
+### save shrinking data in the file swelling/shrinking/shrinking.dat ###
+path = os.path.join( fol , "shrinking.dat" ) 
+with open( path , "w" ) as f:
+     f.write( "# alpha , Rg (no nanoparticles), err , Rg_mg/Rg_mg0 , err , Rh (with nanoparticles) , err , Rh_mg/Rh_mg0 , err , <Rg>_l/<Rg0>_l (all chains) , err , <Rg>_l/<Rg0>_l (charged chains) , <Rg>_l/<Rg0>_l (neutral chains) , <r>_l/<r0>_l (all chains) , err , <r>_l/<r0>_l (charged chains) , <r>_l/<r0>_l (neutral chains), sqrt(<Rg^2>_l/<Rg0^2>_l) (all chains) , sqrt(<r^2>_l/<r0^2>_l) (all chains) , (Rg_mg/Rg_mg0)_chains (all chains) \n" )
+savetxt( temp , c_[alphas, Rg, errRg, shr_Rg, errShrRg, Rh, errRh, shr_Rh, errShrRh, shr, errShr, shr_c, shr_n, dis, errDis, dis_c, dis_n, shr_sq, dis_sq, sRg_sq] )
+os.system( "cat " + temp + " >> " + path ) ; os.system( "rm " + temp )
+print( "shrinking values saved to file " + path )
+print()
+
+tf = time.time()
+print( "total computation time: %i s"%(tf-t0) ) 
+print( "Done." ) ; print()

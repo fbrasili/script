@@ -1,0 +1,126 @@
+#!/usr/bin/python3
+
+import sys
+import os
+sys.path.append('/home/fbrasili/.python')
+from ions import *
+from plots import myPlot
+from init_file import *
+import time
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " compute the average number of charged monomers of the microgel bonded to each nanoparticle: " )
+print( "    1. a threhsold for the distance between the surfaces of the monomers and the nanoparticles is determined based on the ions-nps g(r) " )
+print( "       the thresholod is the value of r at which the g(r) is the fraction of its maximum given by thres" )
+print( "    2. for each configuration determine the number of ions bonded to each nanoparticle as those whose distance from the nanparticle is lower than the threshold " )
+print( "    3. compute the distribution of bonden ions per nanoparticle over all the configurations " )
+print( "    4. compute the average value and the standard deviation " )
+print( " save the distribution of the number of ions adsorbed to each nanoparticle in the file bonded_ions.dat " )
+print( " save the number of nanoparticles adsorbed to the microgel at each timestep in the file adsorbed_nps.dat " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "    compute_chains_properties -options " )
+print( "  Options: " )
+print( "    -dir <name>		name of the directory where performing the analysis (default ./) " )
+print( "    -conf <name>	name of the configurations file (default configurations.dat) " )
+print( "    -in <n<me>          name of the init file (default mgel_nanoparts_eq10e6.dat)" )
+print( "    -thres <val>        this parameter is the ratio with respect to the maximum of the g(r), used to determine the threshold distance for adsorbed ions (0. < val < 1. , default = 0.2) " )
+#print( "    -out <name>		name of the output file (default bonded ions ) " )
+print()
+print( "======================================================================================================================================" )
+print()
+
+t0=time.time()
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    os.system( "pwd >> path.dat" )
+    fol0 = str( loadtxt( "path.dat" , dtype=str ) )
+    os.system( "rm path.dat" )
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+
+#############################
+### name of the init file ###
+if "-in" in sys.argv:
+    idx = sys.argv.index( "-in" ) + 1
+    init_fname = sys.argv[idx]
+else:
+    init_fname = "mgel_nanoparts_eq10e6.dat"
+    init_fname = os.path.join( fol0 , init_fname )
+assert os.path.isfile( init_fname ), "the file " + init_fname + " doese not exist"
+
+############################################
+### name of the file with configurations ###
+if "-conf" in sys.argv:
+    idx = sys.argv.index( "-conf" ) + 1
+    confs_fname = sys.argv[idx]
+else:
+    confs_fname = "configurations.dat"
+confs_fname = os.path.join( fol0 , confs_fname )
+assert os.path.isfile( confs_fname ), "the file " + confs_fname + " doese not exist"
+
+#########################
+### compute the threshold distance (below which nps and ions are considered in interaction)
+if "-thres" in sys.argv:
+    idx = sys.argv.index( "-thres" ) + 1
+    thres = float(sys.argv[idx])
+else:
+    thres = 0.2
+path_gr = os.path.join( fol0 , 'gr_ions_npart_nopbc.dat' )
+assert os.path.isfile( path_gr ), "the file " + path_gr + " doese not exist, compute g(r) in the directory " + fol0
+
+_,_,box,_,_ = read_init(init_fname)
+_,Nions = check_init(init_fname, retPartType=3, ret=True, verb=False)
+x,y,label = myPlot( "gr" , "np-ion" , fol=fol0 , norm=True, ret=True )
+cond = ( x > max(x[ y == y.max() ]) ) * ( y <= y.max() * thres )
+r_thres = x[cond].min()
+#os.system("pwd > path.dat") ; fol = loadtxt( "prova.dat" , delimiter="/", dtype="str")[-2] ; os.system("rm path.dat")
+#idx = fol.index("D") + 1
+
+###########################################################################################################################################
+### compute the distribution of the number of ions bonded to each nanoparticle and the number of nanoparticles adsorbed to the microgel ###
+path_ions = os.path.join( fol0 , "bonded_ions.dat" )
+if os.path.isfile( path_ions ): os.system( "rm " + path_ions )
+path_ions_distr = os.path.join( fol0 , "bonded_ions_distribution.dat" )
+if os.path.isfile( path_ions_distr ): os.system( "rm " + path_ions_distr )
+path_nps  = os.path.join( fol0 , "adsorbed_nps.dat"  )
+if os.path.isfile( path_nps  ): os.system( "rm " + path_nps  )
+
+t1 = time.time()
+ions_bonded, timesteps, nps_adsorbed = compute_bonded_ions_np(confs_fname, r_thres)
+t2 = time.time()
+
+with open( path_ions , "w" ) as of: 
+    of.write( "# N_ions per NP \t std \n" )
+    of.write( "%.3f \t"%ions_bonded.mean() + "%.3f \n"%ions_bonded.std() )
+print( "average number and standard deviation of number of ions bonded to each nanoparticle saved to file " + path_ions )
+
+Nions = arange(ions_bonded.min(), ions_bonded.max() + 1)
+freq,_ = histogram( ions_bonded, bins=arange(ions_bonded.min(), ions_bonded.max() + 2)-0.5 )
+with open( path_ions_distr , "w" ) as of: 
+    of.write( "# N_ions per NP \t frequency \n" )
+savetxt( ".temp_data" , c_[Nions,freq] , fmt="%i" )
+os.system( "cat .temp_data >> " + path_ions_distr )
+os.system( "rm .temp_data" )
+print( "distribution of number of ions bonded to each nanoparticle saved to file " + path_ions_distr )
+
+with open( path_nps , "w" ) as of: of.write( "# timestep \t N_ads \n" )
+savetxt( ".temp_data" , c_[timesteps,nps_adsorbed] , fmt=["%i","%e"])
+os.system( "cat .temp_data >> " + path_nps )
+os.system( "rm .temp_data" )
+print( "number of nanoparticles adsorbed to the microgel at each timestep saved to file " + path_nps )
+
+tf = time.time()
+
+print( "tempo per analisi = %i s"%(t2-t1) )
+print( "tempo totale impiegato = %i s"%(tf-t0) )
+
+print() ; print( "Done." ) ; print()

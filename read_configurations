@@ -1,0 +1,64 @@
+#!/usr/bin/python3
+
+import sys
+import os
+#from glob import glob
+sys.path.append('/home/fbrasili/.python')
+from configurations import *
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " read and operate on a configurations file " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "    read_configuratios -options " )
+print( "  Options: " )
+print( "    -f <name>       name of the file with configurations (default configurations.dat) " )
+print( "    -out <name>     name of the output file (default new_confs.dat) " )
+print( "    -dir <name>     name of the directory where operate (default ./)" )
+print( "    -check          check if there are missing or repeated configurations in the file" )
+print( "    -c              check if there are missing or repeated configurations in the file" )
+print()
+print( "======================================================================================================================================" )
+print()
+
+#############################
+### name of the directory ###
+if '-dir' in sys.argv:
+    idx = sys.argv.index('-dir') + 1
+    fol = sys.argv[idx]
+else:
+    fol = "./"
+assert os.path.isdir( fol ), "missing directory " + fol
+
+############################################
+### name of the file with configurations ###
+if '-f' in sys.argv:
+    idx = sys.argv.index("-f") + 1
+    fname = sys.argv[idx]
+else:
+    fname = 'configurations.dat'
+path = os.path.join( fol, fname )
+assert os.path.isfile( path ), "missing file " + path
+
+###############################
+### name of the output file ###
+if "-out" in sys.argv:
+    idx = sys.argv.index( "-out" ) + 1
+    out_fname = sys.argv[idx]
+else:
+    out_fname = os.path.join( fol , "new_confs.dat" )
+out_path = os.path.join( fol, out_fname )
+
+##############
+### SCRIPT ###
+
+## check ##
+if any([ opt in sys.argv for opt in ["-check","-c"] ]): readConfigurations(filename=path , retVals=False, check=False, verb=True)
+
+
+## remove repeated configurations ##  !!! questa è da sostituire con removeTimesteps() in configurations.py
+if '-remove' in sys.argv: removeDoubled()

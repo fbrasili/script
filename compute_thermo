@@ -1,0 +1,76 @@
+#!/usr/bin/python3
+
+import sys
+import os
+from numpy import *
+#sys.path.append('/home/fbrasili/.python')
+
+print()
+print( "======================================================================================================================================" )
+print( " compute the mean values of the thermodynamics quantities in the file screen.dat " )
+print( " save the computed values in the files thermo.dat " )
+print( "======================================================================================================================================" )
+print( "  Usage: " )
+print( "    compute_mean_thermo <filename> -options " )
+print( "    <filename> is the file with listed thermodynamics quantities (default screen.dat) " )
+print( "  Options: " )
+print( "    -dir <name>		name of the directory where performing the analysis (default ./) " )
+print( "    -f <filename>     	name of the file with listed thermodynamics quantities (default screen.dat) " )
+print( "======================================================================================================================================" )
+print()
+
+###########################################################
+### name of the directory where to perform the analysis ###
+fol = "./"
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol = sys.argv[idx]
+assert os.path.isdir( fol ), "the directory " + fol + " does not exist"
+
+##################################
+### name of the file with data ###
+fname = ""
+if len( sys.argv ) > 1:
+    fname = os.path.join( fol , sys.argv[1] )
+if "-f" in sys.argv:
+    idx = sys.argv.index( "-f" ) + 1
+    fname = os.path.join( fol , sys.argv[idx] )
+if not os.path.isfile( fname ):
+    fname = os.path.join( fol , "screen.dat" )    
+assert os.path.isfile( fname ), "the file " + fname + " doese not exist"
+print( "computing energy and pressure values from file " + fname )
+
+read_lines = False
+with open( fname , "r" ) as f:
+    for i,line in enumerate(f):
+        line = line.split()
+        if "PRODUCTION" in line : read_lines = True
+        if read_lines:
+            if "Step" in line: skiprows = i+1
+            if "Loop" in line: maxrows = i-skiprows
+
+data = loadtxt( fname , skiprows=skiprows , max_rows=maxrows , unpack=True )
+print( "number of values: %i"%shape(data)[1] )
+print( "first step: %i"%data[0,0] )
+print( "last step: %i"%data[0,-1] )
+print()
+
+data = data.mean(1) ; Ens,Ps = data[1:4],data[7:] ; assert len(Ps) in [4,6]
+Pmg = Ps[1] + Ps[3]
+
+#######################################################
+### save the computed quantities to the output file ###
+out_fname = os.path.join( fol , "thermo.dat" )
+if os.path.isfile( out_fname ): os.system( "rm " + out_fname )
+
+headings = ["E_tot","E_kin","Epot","P_all","P_neut","P_neg_ions","P_mg_ions"]
+if len(Ps) == 6: headings += ["P_nps","P_pos_ions"]
+headings += ["P_mgel"]
+
+values = [ "%.5e"%En  for En in Ens ] + [ "%.5e"%P for P in Ps ] + [ "%.5e"%Pmg ]
+
+with open( out_fname , "w" ) as f:
+    f.write( "\t".join(headings) + "\n" )
+    f.write( "\t".join(values)   + "\n" )
+print( "thermodynamics quantities saved to file " + out_fname )
+print() ; print( "Done." ) ; print()

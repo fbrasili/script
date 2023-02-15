@@ -1,0 +1,187 @@
+#!/usr/bin/python3
+
+import sys
+import os
+sys.path.append('/home/fbrasili/.python')
+from init_file import *
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " read and operate on init file " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "    read_init -options " )
+print( "  Options: " )
+print( "    -f <name>       name of the init file (default mgel_nanoparts_eq10e6.dat) " )
+print( "    -out <name>     name of the output file (default new.init) " )
+print( "    -dir <name>     name of the directory where operate (default ./) " )
+print( "    -check          check the relevant values in the init file " )
+print( "    -c              check the relevant values in the init file " )
+print( "    -type <str>     type of particle on which operate" )
+print( "    -t <str>        type of particle on which operate" )
+print( "    -charge <val>   new charge value " )
+print( "    -q <val>        new charge value " )
+print( "    -remove <N>     remove N particles " )
+print( "    -rem <N>        remove N particles " )
+print( "    -r <N>          remove N particles " )
+print( "    -newtype <val>  new particle type  " )
+print( "    -nt <val>       new particle type  " )
+print( "    -newbox <val>   new size of the simulation box " )
+print( "    -replace        replace the init file " )
+print()
+print( "======================================================================================================================================" )
+print()
+
+
+#############################
+### name of the directory ###
+if '-dir' in sys.argv:
+    idx = sys.argv.index('-dir') + 1
+    fol = sys.argv[idx]
+else:
+    fol = "./"
+    assert os.path.isdir( fol ), "missing directory " + fol
+
+#########################
+### name of the init file
+if "-f" in sys.argv:
+    idx = sys.argv.index("-f") + 1
+    init_fname = sys.argv[idx]
+else:
+    init_fname = "mgel_nanoparts_eq10e6.dat"
+init_fname = os.path.join( fol , init_fname )
+assert os.path.isfile( init_fname ), "I cannot find the file " + init_fname
+
+###########################
+### name of the output file
+if "-out" in sys.argv:
+    idx = sys.argv.index("-out") + 1
+    out_fname = sys.argv[idx]
+else:
+    out_fname = "new.init"
+out_fname = os.path.join( fol , out_fname )
+if "-check" not in sys.argv and "-c" not in sys.argv:
+    if out_fname == init_fname:
+        print( "WARNING: the output file has the same name of the input file!" )
+    elif os.path.isfile( out_fname ):
+        os.system( "rm " + out_fname )
+
+###############
+# particle type
+if "-type" in sys.argv:
+    idx = sys.argv.index("-type") + 1
+    t = sys.argv[idx]
+elif "-t" in sys.argv:
+    idx = sys.argv.index("-t")    + 1
+    t = sys.argv[idx]
+else:
+    t = None
+if t in ["nanoparticles", "nanoparts", "nparts", "NPs", "nps", "np"]:
+    t = 4
+elif t in ["bond", "bonds"]:
+    t = "bonds"
+elif t is None:
+    pass
+else:
+    t = int( t )
+
+
+############################################
+### read general options
+
+# replace or create a new init file
+if "-replace" in sys.argv: 
+    replace = True
+else:
+    replace = False
+
+
+############################
+########## SCRIPT ##########
+############################
+changed = False
+
+npNames = ["nanoparticles", "nanoparts", "nparts", "NPs", "nps", "np"]
+partNames = ["part", "parts", "particle", "particles", "atom", "atoms"]
+bondNames = ["bond", "bonds"]
+
+# check the init file
+if "-check" in sys.argv or "-c" in sys.argv:
+    check_init( init_fname )
+
+# remove particles of the selected type
+elif "-r" in sys.argv or "-rem" in sys.argv or "-remove" in sys.argv:
+    changed = True
+    assert t is not None, "Specify the type of particles or the bonds on which operating"
+    if t == "bonds":
+        rem_bondType( init_fname, outfile=out_fname, replace=False)
+    else:
+        if   "-remove" in sys.argv: idx = sys.argv.index("-remove") + 1
+        elif "-rem"    in sys.argv: idx = sys.argv.index("-rem"   ) + 1
+        elif "-r"      in sys.argv: idx = sys.argv.index("-r"     ) + 1
+        toRemove = int( sys.argv[idx] )
+        os.system( 'cp ' + init_fname + ' .temp_init' )
+        if t == 4:
+            Qnp,_ = check_init( init_fname, retPartType=4, ret=True)
+            print("Charge of each nanoparticle: %i"%Qnp)
+            if Qnp < 0: 
+                remove_atoms( '.temp_init' , 5, toRemove*abs(Qnp), outfile='.temp_out', replace=False)
+                os.system( 'mv .temp_out .temp_init' )
+        remove_atoms( '.temp_init', t, toRemove, outfile=out_fname, replace=False)
+        os.system( 'rm .temp_init' )
+# change the charge of particles of the selected type
+elif "-q" in sys.argv or "-charge" in sys.argv:
+    changed = True
+    assert t is not None, "Specify the type of particles on which operating" 
+    if   "-charge" in sys.argv: idx = sys.argv.index("-charge") + 1
+    elif "-q"      in sys.argv: idx = sys.argv.index("-q")      + 1
+    q = sys.argv[idx]
+    print( "modifying to "+ q + " the carge of particles of type %i"%t )
+    modify_init( init_fname, partType=t, newCharge=q, outfile=out_fname, replace=False)
+    if t == 4:
+        Qnp,Nnp = check_init( init_fname , ret=True)
+        assert abs(float(q)) < abs(float(Qnp)), "The charge of nanoparticles can only be lowered"
+        print("Initial charge of nanoparticles: %i"%Qnp)
+        print("Final charge of nanoparticles: " + q)
+        NtoRemove = int( abs( Qnp-int(q) ) * Nnp )
+        print( "removing %i"%NtoRemove + " partycles of type 5" )
+        remove_atoms( out_fname, 5, NtoRemove, outfile='.temp_init', replace=False)
+        os.system( 'mv .temp_init ' + out_fname )
+
+# change the type of particles of the selected type
+elif "-newtype" in sys.argv or "-nt" in sys.argv:
+    changed = True
+    assert t is not None, "Specify the type of particles on which operating"
+    if   "-newtype" in sys.argv: idx = sys.argv.index("-newtype") + 1
+    elif "-nt"      in sys.argv: idx = sys.argv.index("-nt"     ) + 1
+    newType = int( sys.argv[idx] )
+    print( "modifying to %i"%newType + " the type of particles of type %i"%t )
+    modify_init( init_fname, partType=t, newType=newType, outfile=out_fname, replace=False)
+
+# convert the init file adding a second bond type
+elif "-convert" in sys.argv:
+    changed = True
+    add_bondType(infile, outfile=new_file, replace=replace)
+
+# reorder the list of atoms
+elif "-reorder" in sys.argv:
+    changed = True
+    reorder_atoms(infile, outfile=new_file, replace=replace)
+
+# change the box size
+elif "-newbox" in sys.argv:
+    changed = False
+    idx = sys.argv.index("-newbox") + 1
+    box = int( sys.argv[idx] )
+    assert box%2 == 0 , "chose an even value for the box size"
+    change_box( init_fname , box , outfile=out_fname , replace=replace )
+    print("New box size: ", box)
+
+print()
+if changed:
+    if replace: os.system( 'mv ' + out_fname + ' '+ init_fname )
+    else:       print( "New init file: " + out_fname )
+print( "Done ." )

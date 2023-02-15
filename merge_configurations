@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+
+import sys
+#import os
+#from glob import glob
+sys.path.append('/home/fbrasili/.python')
+from configurations import *
+
+print()
+print( "======================================================================================================================================" )
+print()
+print( " merge files two or more configurations files " )
+print()
+print( "======================================================================================================================================" )
+print()
+print( "  Usage: " )
+print( "  merge_configurations -options " )
+print( "  Options: " )
+print( "    -dir <name>                  name of the directory where performing the analysis (default ./) " )
+print( "    -out <name>                  name of the output file (default overwrite the file \"configurations.dat\" in the selected directory ) " )
+print( "    -nested                      the files with configurations are in nested /restart/ directories: " )
+print( "                                  - clean /restart/ directories from useless files " )
+print( "                                  - move the file final.init to the main directory " )
+print( "    -fnames <name1> <name2> ..   names of the configurations files to merge " )
+print()
+print( "======================================================================================================================================" )
+print()
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+
+###############################
+### name of the output file ###
+if "-out" in sys.argv:
+    idx = sys.argv.index( "-out" ) + 1
+    out_fname = sys.argv[idx]
+else:
+    out_fname = os.path.join( fol0 , "configurations.dat" )
+
+##############
+### SCRIPT ###
+assert "-nested" in sys.argv or "-fnames" in sys.argv , "specify the names of the files to merge or if they are in nested /restart/ directories"
+
+if "-nested" in sys.argv:
+    fol,fols = fol0,[]
+    while os.path.isdir( fol ):
+        fols += [fol]
+        os.system( "rm " + os.path.join( fol , "chmgel.restart*") )
+        os.system( "rm " + os.path.join( fol , "remaining_steps") )
+        fol = os.path.join( fol , "restart" )
+
+    os.system( "mv " + os.path.join( fols[-1] , "final.init" ) + " " + fol0 )
+    assert len(fols) > 1 , "no restart to merge"
+    
+    paths = [ os.path.join( fol , "configurations.dat" )  for fol in fols ]
+    
+    print( "merging the configuration files in the /restart/ directories nested in " + fol0 + " ..." )
+
+elif "-fnames" in sys.argv:
+    idx0 = sys.argv.index( "-fnames" ) + 1
+    isOption = [ sys.argv[idx].strip()[0] == "-"  for idx in range( idx0 , len(sys.argv) ) ]
+    if any(isOption): idxN = idx0 + argwhere(isOption).min()
+    else            : idxN = len(sys.argv)
+    assert idxN > idx0 + 1 , "specify at least two files to merge"
+    paths = [ os.path.join( fol0 , arg.strip() ) for arg in sys.argv[idx0:idxN] ]
+    
+    print( "merging the configurations ..." )
+
+
+assert all( [ os.path.isfile( path ) for path in paths ] ) , "the file configurations.dat is missing in at least one of the nested /restart/ directories, cannot proceed with merging"
+
+path0 = paths[0]
+_,first0,interval0,_,last0,_ = readConfigurations( path0 , check=False , retVals=True , verb=False )
+print( "adding configurations from " + path0 + " ..." )
+os.system( "cp " + path0 + " .temp_merge" )
+
+for path in paths[1:]:
+    print( "adding configurations from " + path + " ..." )
+    _,first,interval,_,last,_ = readConfigurations( path , check=False , retVals=True , verb=False )
+    assert first <= last0+interval0 , "missing configurations between files " + path0 + " and " + path
+    mergeConfigurations( ".temp_merge" , path , replace=True )
+    first0,interval0,last0,path0 = first,interval,last,path
+
+assert readConfigurations( ".temp_merge" , check=True , retVals=False , verb=False )
+os.system( "mv .temp_merge " + out_fname )
+
+print() ; print( "Done." ) ; print()
+

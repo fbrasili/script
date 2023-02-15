@@ -1,0 +1,123 @@
+#!/usr/bin/python3
+
+import sys
+import os
+from glob import glob
+import matplotlib
+matplotlib.use('Agg')
+from pylab import *
+sys.path.append('/home/fbrasili/.python')
+from chains import *
+from init_file import check_init
+from utils import compute_mean
+
+print()
+print( "======================================================================================================================================" )
+print( " analysis of the microscopic origin the microgel shrinking: chains shrinkig and radial displacement " )
+print( " the following plots are generated: " )
+print( "    average shrinking Rg/Rg0   Vs   L, q, d, dc (only charged chains), r0 and Rg0 " )
+print( "    average displacement r/r0  Vs   L, q, d, dc (only charged chains), r0 and Rg0 " )
+print( "    average displacement r-r0  Vs   L, q, d, dc (only charged chains), r0 and Rg0 " )
+print( "    total charge q             Vs   L, r, r0 and L " )
+print( " save the computed quantities and the plots in the directory plots_chains_analysis " )
+print( "======================================================================================================================================" )
+print( "  Usage: " )
+print( "    plot_chains_analysis -options" )
+print( "  Options: " )
+print( "    -dir <name>            name of the directory where performing the anas (default ./) " )
+print( "    -w                     the mean chain shrinking is computed using the chains lenghts as weights " )
+print( "    -step <var> <value>    var is \"L\" (chain length), \"r\" (radial position) or \"d\" (distance from closest NP) " )
+print( "                           the value is the step used for computing the average chain shrinking selecting Vs the selected variable "  )
+print( "                           (default -step L 10 ; -step r 2 ; -step d 1 ; -step q 1)  " )
+print( "    -mode <str>            choose the mode for computing the mean vales of the plotted quantities (default \"bins\") " )
+print( "                            upto: description   " )
+print( "                            from: description   " )
+print( "                            bins: description   " )
+print( "======================================================================================================================================" )
+print()
+
+###########################################################
+### name of the directory where to perform the analysis ###
+if "-dir" in sys.argv:
+    idx = sys.argv.index( "-dir" ) + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "the directory " + fol0 + " does not exist"
+path_data = os.path.join( fol0 , "chains_properties.dat" )
+assert os.path.isfile( path_data ), "the file " + path_data + " is missing in the directory " + fol0
+
+################################################
+### name of the directory where to save data ###
+fol_plots = os.path.join( fol0 , 'plots_chains_analysis' )
+if not os.path.isdir( fol_plots ): os.system( 'mkdir ' + fol_plots )
+
+###########################################
+### choose the step value for each variable
+dl,dq,dr,dd = 10,1,2,1
+if "-step" in sys.argv:
+    idxs = argwhere( array(sys.argv)=="-step" ).flatten() + 1
+    for idx in idxs:
+        if   sys.argv[idx] in ["L","l","N","n"]: dl =   int( sys.argv[idx+1] )
+        elif sys.argv[idx] in ["Q","q"]        : dq =   int( sys.argv[idx+1] )
+        elif sys.argv[idx] in ["R","r"]        : dr = float( sys.argv[idx+1] )
+        elif sys.argv[idx] in ["D","d"]        : dd = float( sys.argv[idx+1] )
+
+###############
+### import data
+print( "loading data from " + path_data + " ..." )
+L,q,r,Rg,d,dc,r0,Rg0 = loadtxt( path_data , usecols=(0,1,2,3,5,6,7,8) , skiprows=1 , unpack=True )
+
+############################
+### compute shrinking values
+Xs  = array([  L ,  q ,  r ,  d   ,  r0  ]) ; del d
+dXs = array([  dl,  dq,  dr,  dd  ,  dr  ]) ; del dl,dr
+xnames =    [ "L", "q", "r", "Dnp", "r0" ]
+
+ynames = array([ "shrinking"      , "radial displacement" , "Dr"                      , "chain charge"            ])
+conds  = array([ L>1              , r0>0                  , ones_like(L).astype(bool) , ones_like(L).astype(bool) ])
+Ys     =       [ Rg[L>1]/Rg0[L>1] , r[r0>0]/r0[r0>0]      , r[r0>0]-r0[r0>0]          , q                         ]
+del Rg,Rg0,r,r0
+
+
+#############
+### PLOTS ###
+print( "plotting chains analysis curves ..." ) ; print()
+
+##########################################################
+### select, plot and save analysis data for neutral chains
+condsQ = [ ones_like(dc).astype(bool) , isnan(dc) , ~isnan(dc) ]
+fnames = [ "all"                      , "neutral" , "charged"  ]
+
+
+if "-mode" in sys.argv:
+    idx = sys.argv.index( "-mode" ) + 1
+    mode = sys.argv[idx]
+else:
+    mode = "bins"
+print( "the average data for plots are computed using the mode " + mode ) ; print()
+
+for condQ,fname in zip(condsQ,fnames):
+    print("plotting data for " + fname + " chains ...")
+    if fname == "charged":
+        Xs  = append( Xs  , [dc]   , axis=0 ) ; del dc
+        dXs = append( dXs , dd ) ; del dd
+        xnames += ["Dc"]
+    for Y,cond,yname in zip( Ys, conds , ynames ):
+        for X,dX,xname in zip( Xs[:,condQ*cond] , dXs , xnames ):
+            if xname == "q" and yname == "chain charge": continue
+            if ( yname == "chain charge" or xname == "q" ) and fname in ["neutral", "charged"] : continue
+            print(" plotting " + yname + " Vs " + xname + " ..."  )
+            if "-w" in sys.argv: W = L[condQ*cond]
+            else: W = None
+            xs,ys,dys = compute_mean(X, Y[condQ[cond]], W, dX, mode=mode)
+            yname_path = "".join([ str( where(j==0,word,word.capitalize()) ) for j,word in enumerate(yname.split()) ])
+            path = os.path.join( fol_plots , yname_path + "Vs" + xname + "_" + fname )
+            savetxt( path+".dat" , c_[xs,ys,dys] )
+            figure()
+            errorbar( xs, ys, yerr=dys , fmt="o" )
+            savefig( path+".pdf" ) ; close()
+        print()
+        
+print( "all data and plots were saved in the directory " + fol_plots )
+print() ; print( "Done." ) ; print()

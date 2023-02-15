@@ -1,0 +1,236 @@
+#!/usr/bin/python3
+
+import matplotlib
+matplotlib.use('Agg')
+from numpy import loadtxt,savetxt,shape,argsort
+from pylab import *
+from glob import glob
+import sys
+import os
+sys.path.append('/home/fbrasili/.python')
+from plots import *
+
+##########################################################################################################################################################################################
+print( "======================================================================================================================================" )
+print( " plot radial density profiles and g(r) functions as specified in the options" )
+print( " save the plots in the directory \"plots_analysis\"" )
+print( "======================================================================================================================================" )
+print( "  Usage: " )
+print( "    plot.py -options " )
+print( "  Options: " )
+print( "    -dir <name>           name of the directory where performing the analysis (default ./) " )
+print( "    -gr                   plot g(r) NPs-NPs and NPs-ions functions " )
+print( "    -profile              plot radial density profiles of microgel monomers and of nanoparticles " )
+print( "    -force                compute and plot mean force and mean force potential " )
+print( "    -fixed <par> <val>    plot only curves whith a fixed value of the specified parameter (default -fixed alpha 0.00) " )
+print( "    -vs <par>             plot curves at varying the specified parameter " )
+print( "    -Nmin <val>           minimum number of curves to plot in each graph: if n<Nmin do not plot the curves (default 3) " )
+print( "    -thres <val>          this parameter is the ratio with respect to the maximum of the g(r), used to determine the threshold distance for adsorbed ions (0. < val < 1. , default = 0.2) " )
+print( "======================================================================================================================================" )
+print(  )
+##########################################################################################################################################################################################
+
+### !!! per ora impone sempre che ci sia un valore di alpha fissato, modificare il codice per fare plot al variare di alpha ###
+
+####################################
+### parameters to be varied in plots
+vsD,vsQ,vsN = True,True,True
+if "-vs" in sys.argv:
+    vsD,vsQ,vsN = False,False,False
+    idxs = argwhere( array(sys.argv)=="-vs" ).flatten() + 1
+    for idx in idxs:
+        if   sys.argv[idx] in ["D","d"]: vsD = True
+        elif sys.argv[idx] in ["Q","q"]: vsQ = True
+        elif sys.argv[idx] in ["N","n"]: vsN = True
+
+#################################################
+### name of the directory where plotting profiles
+if "-dir" in sys.argv:
+    idx = sys.argv.index("-dir") + 1
+    fol0 = sys.argv[idx]
+else:
+    fol0 = "./"
+assert os.path.isdir( fol0 ), "I cannot find the directory " + fol0
+print( "plotting data from analyses of directory " + fol0 )
+fol_plots = os.path.join( fol0 , 'plots_analysis' )
+
+fols = glob( os.path.join( fol0 , 'np*' ) )
+Ns,Qs,Ds = [],[],[]
+for fol in fols:
+    idx0 = fol.index('/') ; idx0 = idx0 + fol[idx0:].index('_')
+    idx1 = idx0 + fol[idx0:].index('n') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Ns += [ int(   fol[idx1:idx2] ) ]
+    idx1 = idx2 + fol[idx2:].index('q') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Qs += [ int(   fol[idx1:idx2] ) ]
+    idx1 = idx2 + fol[idx2:].index('D') + 1 ; idx2 = idx1 + fol[idx1:].index('_') ; Ds += [ float( fol[idx1:idx2] ) ]
+fols,Ns,Qs,Ds = array(fols),array(Ns),array(Qs),array(Ds)
+fol_mgel = glob( os.path.join( fol0 , 'mgel_*'  ) )[0]
+
+####################
+### fixed parameters
+alpha = 0.
+cond = ones_like(fols).astype("bool")
+if "-fixed" in sys.argv:
+    idxs = argwhere( array(sys.argv)=="-fixed" ).flatten() + 1
+    for idx in idxs:
+        if sys.argv[idx] in ["D","d"]: 
+            D = float( sys.argv[idx+1] )
+            cond *= Ds==D
+            vsD = False
+        elif sys.argv[idx] in ["Q","q"]: 
+            Q = int( sys.argv[idx+1] )
+            cond *= Qs==Q
+            vsQ = False
+        elif sys.argv[idx] in ["N","n"]:
+            N = int( sys.argv[idx+1] )
+            cond *= Ns==N
+            vsN = False
+        elif sys.argv[idx] == "alpha":
+            alpha = float( sys.argv[idx+1] )
+if vsD+vsQ+vsN == False: print( "unfix at least one parameter" )
+fols,Ns,Qs,Ds = fols[cond],Ns[cond],Qs[cond],Ds[cond]
+
+fols = array([ os.path.join( f , 'alpha_%.2f'%alpha ) for f in fols ])
+for f in fols: assert os.path.isdir( f ), "I cannot find the directory " + f
+fol_mgel = os.path.join( fol_mgel , 'alpha_%.2f'%alpha )
+assert os.path.isdir( fol_mgel ), "I cannot find the directory " + fol_mgel
+
+nVals,qVals,dVals = list(set(Ns)),list(set(Qs)),list(set(Ds))
+
+if "-thres" in sys.argv:
+    idx = sys.argv.index( "-thres" ) + 1
+    thres = float(sys.argv[idx])
+else:
+    thres = None
+
+####################
+### quantity to plot
+if "-profile" in sys.argv: 
+    systems = ['mgel','nps']
+    observables = ["profile"] * len(systems)
+    ylabs = ['density profile'] * len(systems)
+    xmaxs = [25.] * len(systems)
+elif "-gr" in sys.argv: 
+    systems = ['nps','np-ion']
+    observables = ["gr"] * len(systems)
+    systems = ['nps','np-ion']
+    ylabs = ['g(R)'] * len(systems)
+    xmaxs = [25.,5.]
+elif "-force" in sys.argv:
+    ylabs = ['V(r)','F(r)']
+    observables = ["gr"] * len(ylabs)
+    systems = ['np-ion'] * len(ylabs)
+    xmaxs = [5.] * len(ylabs)
+else:
+    print( "specify at least one type of curve to plot \n\tavailable choices: -gr , -profile " )
+    vsD,vsQ,vsN = False,False,False
+
+if not os.path.isdir( fol_plots ) and (vsD+vsQ+vsN): os.system( 'mkdir ' + fol_plots )
+##############################################
+### plot curves versus the selected parameters
+if "-Nmin" in sys.argv:
+    idx = sys.argv.index("-dir") + 1
+    nmin = int( sys.argv[idx] )
+else:
+    nmin = 3
+
+###################################################
+### compare profiles at different N (fixed D and Q)
+if vsN:
+    print( "plotting curves Vs N ..." )
+    fols,Ns,Qs,Ds = fols[argsort(Ns)],Ns[argsort(Ns)],Qs[argsort(Ns)],Ds[argsort(Ns)]
+    for system,observable,xmax,ylab in zip(systems,observables,xmaxs,ylabs):
+        for Q,D in transpose(meshgrid(qVals,dVals)).reshape(len(qVals)*len(dVals), 2):
+            cond = (Qs==Q) * (Ds==D)
+            if cond.sum() < nmin: continue
+            path = os.path.join( fol_plots , observable + "VsN_" + system + "_q%i"%Q+"_D%.1f"%D )
+            leg_title = 'Q = -%i, '%Q + 'D = %.1f'%D
+            fols2plot,ns = fols[cond],Ns[cond]
+            if observable == "profile" and system == "mgel": fols2plot,ns = append( fol_mgel , fols2plot ) , append( 0 , ns )
+            figure()
+            data2plot = []
+            for fol,N in zip(fols2plot,ns):
+                x,y,label = myPlot( observable , system , fol=fol , norm=True, ret=True )
+                if ylab == 'V(r)':
+                    x,y = compute_pot(x,y)
+                    label = 'mean force potential'
+                elif ylab == 'F(r)':
+                    x,y = compute_Fr(x,y)
+                    label = 'mean force'
+                data2plot += [x,y]
+                plot( x , y , '--' , label='N = %i'%N )
+                if system == 'np-ion':
+                    axvline(D/2.+0.5,ls=':')
+                    if thres is None:
+                        r_thres = compute_threshold_gr_pot(fol=fol)
+                    else:
+                        cond_thres = ( x > max(x[ y == y.max() ]) ) * ( y <= y.max() * thres )
+                        r_thres = x[cond_thres].min()
+                    axvline(r_thres , ls=':')
+            axhline(0., ls=':')
+            xlim(0,D*xmax)
+            xlabel(r'distance / $\sigma$' , fontsize=16) ; ylabel(ylab , fontsize=16)
+            leg = legend( fontsize=9 , title=label+'\n'+leg_title, loc=1 ) ; leg._legend_box.align = 'left'
+            savefig( path+'.pdf' ); close()
+            with open(path+'.dat', "w") as of:
+                for n in ns: of.write( 'N=%i\t\t\t\t'%n )
+                of.write( '\n' )
+                for n in ns: of.write( 'x\t\ty\t\t' )
+                of.write( '\n' )
+            savetxt( '.temp_data' , array(data2plot).transpose() , delimiter='\t', fmt='%.5e')
+            os.system( 'cat .temp_data >> ' + path+'.dat' ) ; os.system( 'rm .temp_data' )
+
+###################################################
+### compare profiles at different Q (fixed D and N)
+if vsQ:
+    print( "plotting curves Vs Q ..." )
+    fols,Ns,Qs,Ds = fols[argsort(Qs)],Ns[argsort(Qs)],Qs[argsort(Qs)],Ds[argsort(Qs)]
+    for system,observable,xmax,ylab in zip(systems,observables,xmaxs,ylabs):
+        for N,D in transpose(meshgrid(nVals,dVals)).reshape(len(nVals)*len(dVals), 2):
+            cond = (Ns==N) * (Ds==D)
+            if cond.sum() < nmin: continue
+            path = os.path.join( fol_plots , observable + "VsQ_" + system + "_n%i"%N+"_D%.1f.pdf"%D )
+            leg_title = 'N = %i, '%N + 'D = %.1f'%D
+            fols2plot,qs = fols[cond],Qs[cond]
+
+            figure()
+            for fol,Q in zip(fols2plot,qs):
+                x,y,label = myPlot( observable , system , fol=fol , norm=True, ret=True )
+                plot( x , y , '--' , label=label+'Q = -%i'%Q )
+            axvline(D/2.+0.5,ls=':')
+            xlim(0,D*xmax)
+            xlabel(r'distance / $\sigma$' , fontsize=16) ; ylabel(ylab , fontsize=16)
+            leg = legend( fontsize=9 , title=label+'\n'+leg_title, loc=1 ) ; leg._legend_box.align = 'left'
+            savefig( path ); close()
+
+###################################################
+### compare profiles at different D (fixed Q and N)
+if vsD:
+    print( "plotting curves Vs D ..." )
+    fols,Ns,Qs,Ds = fols[argsort(Ds)],Ns[argsort(Ds)],Qs[argsort(Ds)],Ds[argsort(Ds)]
+    for system,observable,xmax,ylab in zip(systems,observables,xmaxs,ylabs):
+        for N,Q in transpose(meshgrid(nVals,qVals)).reshape(len(nVals)*len(qVals), 2):
+            cond = (Ns==N) * (Qs==Q)
+            if cond.sum() < nmin: continue
+            path = os.path.join( fol_plots , observable + "VsD_" + system + "_n%i"%N+"_q%i"%Q )
+            leg_title = 'N = %i, '%N + 'Q = -%i'%Q
+            fols2plot,ds = fols[cond],Ds[cond]
+    
+            figure()
+            data2plot = []
+            for fol,D in zip(fols2plot,ds):
+                x,y,label = myPlot( observable , system , fol=fol , norm=True, ret=True )
+                data2plot += [x,y]
+                plot( x , y , '--' , label='D = %.1f'%D )
+            axvline(D/2.+0.5,ls=':')
+            xlim(0,D*xmax)
+            xlabel(r'distance / $\sigma$' , fontsize=16) ; ylabel(ylab , fontsize=16)
+            leg = legend( fontsize=9 , title=label+'\n'+leg_title ) ; leg._legend_box.align = 'left'
+            savefig( path+'.pdf' ); close()
+            with open(path+'.dat', "w") as of:
+                for d in ds: of.write( 'D=%.1f\t\t\t\t'%d )
+                of.write( '\n' )
+                for d in ds: of.write( 'x\t\ty\t\t' )
+                of.write( '\n' )
+            savetxt( '.temp_data' , array(data2plot).transpose() , delimiter='\t', fmt='%.5e')
+            os.system( 'cat .temp_data >> ' + path+'.dat' ) ; os.system( 'rm .temp_data' )
+
+print("Done.")
